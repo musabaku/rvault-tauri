@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RVault</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+            color: #f3f4f6; /* text-gray-200 */
+        }
+        .vault-item:hover {
+            background-color: #1f2937; /* bg-gray-800 */
+        }
+        .modal-bg {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+         /* Simple loading spinner */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #3b82f6; /* blue-500 */
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+     <link rel="preconnect" href="https://rsms.me/">
+     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+    <div id="loading-overlay" class="fixed inset-0 z-50 flex-col items-center justify-center hidden bg-gray-900 bg-opacity-80">
+        <div class="spinner"></div>
+        <p class="mt-4 text-lg text-white">Working...</p>
+    </div>
+
+    <div id="app-container" class="w-full max-w-4xl p-4">
+
+        <!-- Setup/Login Screen -->
+        <div id="auth-screen">
+            <div class="max-w-md p-8 mx-auto space-y-6 bg-gray-800 rounded-lg shadow-xl">
+                <div class="text-center">
+                    <svg class="w-12 h-12 mx-auto text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    <h1 class="mt-4 text-3xl font-bold text-white">Welcome to RVault</h1>
+                    <p id="auth-subtitle" class="mt-2 text-gray-400">Securely manage your passwords.</p>
+                </div>
+
+                <!-- Setup View -->
+                <div id="setup-view" class="hidden space-y-4">
+                    <p class="text-center text-gray-300">It looks like this is your first time. Please create a master password to secure your vault.</p>
+                    <div>
+                        <label for="setup-password" class="block mb-2 text-sm font-medium text-gray-300">Master Password</label>
+                        <input type="password" id="setup-password" class="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <div>
+                        <label for="confirm-password" class="block mb-2 text-sm font-medium text-gray-300">Confirm Password</label>
+                        <input type="password" id="confirm-password" class="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <button id="setup-button" class="w-full px-4 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">Create Vault</button>
+                </div>
+
+                <!-- Login View -->
+                <div id="login-view" class="hidden space-y-4">
+                     <p class="text-center text-gray-300">Your vault is locked. Enter your master password to unlock.</p>
+                    <div>
+                        <label for="master-password" class="block mb-2 text-sm font-medium text-gray-300">Master Password</label>
+                        <input type="password" id="master-password" class="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <button id="unlock-button" class="w-full px-4 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">Unlock</button>
+                </div>
+                 <p id="auth-error" class="text-sm text-center text-red-400"></p>
+            </div>
+        </div>
+
+        <!-- Main Vault Screen -->
+        <div id="vault-screen" class="hidden">
+             <div class="flex items-center justify-between mb-6">
+                <h1 class="text-3xl font-bold text-white">My Vault</h1>
+                <div>
+                    <button id="add-entry-btn" class="px-4 py-2 mr-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700">+</button>
+                    <button id="lock-btn" class="px-4 py-2 font-bold text-white bg-red-600 rounded-md hover:bg-red-700">Lock</button>
+                </div>
+            </div>
+
+            <!-- Vault Entries List -->
+            <div id="vault-list" class="space-y-2 bg-gray-800 rounded-lg">
+                <!-- Items will be injected here -->
+            </div>
+            <p id="empty-vault-message" class="hidden mt-8 text-center text-gray-400">Your vault is empty. Click the '+' button to add your first password.</p>
+        </div>
+
+    </div>
+
+    <!-- Add/Edit Entry Modal -->
+    <div id="entry-modal" class="fixed inset-0 z-40 items-center justify-center hidden modal-bg">
+        <div class="w-full max-w-md p-6 bg-gray-800 rounded-lg shadow-xl">
+            <h2 class="mb-4 text-2xl font-bold text-white" id="modal-title">Add New Entry</h2>
+            <form id="entry-form">
+                <div class="mb-4">
+                    <label for="platform" class="block mb-2 text-sm text-gray-300">Platform (e.g., Google)</label>
+                    <input type="text" id="platform" class="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-md" required>
+                </div>
+                <div class="mb-4">
+                    <label for="user-id" class="block mb-2 text-sm text-gray-300">Username / Email</label>
+                    <input type="text" id="user-id" class="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-md" required>
+                </div>
+                <div class="mb-4">
+                    <label for="password" class="block mb-2 text-sm text-gray-300">Password</label>
+                    <div class="flex">
+                        <input type="password" id="password" class="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-l-md" required>
+                        <button type="button" id="generate-password-btn" class="px-3 py-2 text-white bg-blue-600 rounded-r-md hover:bg-blue-700">Generate</button>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" id="cancel-btn" class="px-4 py-2 font-bold text-gray-300 bg-gray-600 rounded-md hover:bg-gray-700">Cancel</button>
+                    <button type="submit" class="px-4 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Custom Notification -->
+    <div id="notification" class="fixed right-5 bottom-5 px-4 py-2 text-white bg-green-500 rounded-md shadow-lg opacity-0 transition-opacity duration-300">
+        Password copied to clipboard!
+    </div>
+
+    <!-- Tauri API script -->
+    <script type="module">
+        const { invoke } = await import ("@tauri-apps/api/core");
+        const { confirm } = await import ("@tauri-apps/api/dialog");
+        const { writeText } = await import("@tauri-apps/api/clipboard");
+
+        // UI Elements
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const authScreen = document.getElementById('auth-screen');
+        const vaultScreen = document.getElementById('vault-screen');
+        const setupView = document.getElementById('setup-view');
+        const loginView = document.getElementById('login-view');
+        const authError = document.getElementById('auth-error');
+        
+        const vaultList = document.getElementById('vault-list');
+        const emptyVaultMessage = document.getElementById('empty-vault-message');
+        
+        const entryModal = document.getElementById('entry-modal');
+        const entryForm = document.getElementById('entry-form');
+        const platformInput = document.getElementById('platform');
+        const userIdInput = document.getElementById('user-id');
+        const passwordInput = document.getElementById('password');
+        const notification = document.getElementById('notification');
+
+        // --- State Management ---
+        function showLoading(show) {
+            loadingOverlay.classList.toggle('hidden', !show);
+            loadingOverlay.classList.toggle('flex', show);
+        }
+        
+        function showNotification(message, duration = 2000) {
+            notification.textContent = message;
+            notification.classList.remove('opacity-0');
+            setTimeout(() => {
+                notification.classList.add('opacity-0');
+            }, duration);
+        }
+
+        // --- Backend Communication ---
+        async function checkInitialState() {
+            showLoading(true);
+            try {
+                const needsSetup = await invoke('check_setup');
+                if (needsSetup) {
+                    authScreen.classList.remove('hidden');
+                    setupView.classList.remove('hidden');
+                    loginView.classList.add('hidden');
+                } else {
+                    authScreen.classList.remove('hidden');
+                    loginView.classList.remove('hidden');
+                    setupView.classList.add('hidden');
+                }
+            } catch (error) {
+                authError.textContent = `Error: ${error}`;
+                console.error("Error during initial state check:", error);
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        async function loadVaultEntries() {
+            showLoading(true);
+            try {
+                const entries = await invoke('get_all_entries');
+                vaultList.innerHTML = ''; // Clear list
+                if (entries.length === 0) {
+                    emptyVaultMessage.classList.remove('hidden');
+                } else {
+                    emptyVaultMessage.classList.add('hidden');
+                    entries.forEach(entry => {
+                        const div = document.createElement('div');
+                        div.className = 'flex items-center justify-between p-4 transition-colors duration-200 rounded-md cursor-pointer vault-item';
+                        div.innerHTML = `
+                            <div class="flex-grow">
+                                <p class="font-semibold text-white">${entry.platform}</p>
+                                <p class="text-sm text-gray-400">${entry.user_id}</p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button class="copy-btn p-2 rounded-md hover:bg-gray-700" data-platform="${entry.platform}" data-userid="${entry.user_id}" title="Copy Password">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                </button>
+                                <button class="delete-btn p-2 rounded-md hover:bg-red-500" data-platform="${entry.platform}" data-userid="${entry.user_id}" title="Delete Entry">
+                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
+                        `;
+                        vaultList.appendChild(div);
+                    });
+                }
+                authScreen.classList.add('hidden');
+                vaultScreen.classList.remove('hidden');
+            } catch (error) {
+                // If getting entries fails, it means we are locked.
+                authScreen.classList.remove('hidden');
+                vaultScreen.classList.add('hidden');
+                loginView.classList.remove('hidden');
+                setupView.classList.add('hidden');
+                authError.textContent = `Session expired or invalid. Please unlock.`;
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // --- Event Listeners ---
+        document.addEventListener('DOMContentLoaded', checkInitialState);
+
+        // Auth Screen events
+        document.getElementById('setup-button').addEventListener('click', async () => {
+            const password = document.getElementById('setup-password').value;
+            const confirm = document.getElementById('confirm-password').value;
+            authError.textContent = '';
+            
+            if (password !== confirm) {
+                authError.textContent = 'Passwords do not match.';
+                return;
+            }
+            if(password.length < 8) {
+                authError.textContent = 'Password must be at least 8 characters long.';
+                return;
+            }
+
+            showLoading(true);
+            try {
+                await invoke('setup_vault', { masterPassword: password });
+                await loadVaultEntries(); // After setup, unlock and load
+            } catch (error) {
+                authError.textContent = `Setup failed: ${error}`;
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        document.getElementById('unlock-button').addEventListener('click', async () => {
+            const password = document.getElementById('master-password').value;
+            authError.textContent = '';
+            showLoading(true);
+            try {
+                await invoke('unlock_vault', { masterPassword: password });
+                document.getElementById('master-password').value = '';
+                await loadVaultEntries();
+            } catch (error) {
+                authError.textContent = `Unlock failed: ${error}`;
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        // Main Vault Screen Events
+        document.getElementById('lock-btn').addEventListener('click', async () => {
+            showLoading(true);
+            try {
+                await invoke('lock_vault');
+                authScreen.classList.remove('hidden');
+                vaultScreen.classList.add('hidden');
+                loginView.classList.remove('hidden');
+                setupView.classList.add('hidden');
+                authError.textContent = 'Vault has been locked.';
+            } catch(error) {
+                console.error("Failed to lock vault:", error);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        document.getElementById('add-entry-btn').addEventListener('click', () => {
+            entryForm.reset();
+            entryModal.classList.remove('hidden');
+            entryModal.classList.add('flex');
+        });
+
+        // Modal Events
+        document.getElementById('cancel-btn').addEventListener('click', () => {
+            entryModal.classList.add('hidden');
+            entryModal.classList.remove('flex');
+        });
+        
+        document.getElementById('generate-password-btn').addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                const newPassword = await invoke('generate_password', { length: 16, specialCharacters: true });
+                passwordInput.value = newPassword;
+                passwordInput.type = 'text'; // Show the generated password
+            } catch (error) {
+                console.error('Failed to generate password:', error);
+            }
+        });
+
+
+        entryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            showLoading(true);
+            entryModal.classList.add('hidden');
+            entryModal.classList.remove('flex');
+
+            try {
+                await invoke('add_entry', {
+                    platform: platformInput.value,
+                    userId: userIdInput.value,
+                    password: passwordInput.value,
+                });
+                await loadVaultEntries();
+                 showNotification('Entry added successfully!');
+            } catch (error) {
+                console.error('Failed to add entry:', error);
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        // Event delegation for dynamically added buttons
+        vaultList.addEventListener('click', async (e) => {
+            const copyBtn = e.target.closest('.copy-btn');
+            const deleteBtn = e.target.closest('.delete-btn');
+
+            if (copyBtn) {
+                showLoading(true);
+                try {
+                    const passwordToCopy = await invoke('get_password', {
+                        platform: copyBtn.dataset.platform,
+                        userId: copyBtn.dataset.userid,
+                    });
+                    await writeText(passwordToCopy);
+                    showNotification('Password copied to clipboard!');
+                } catch (error) {
+                     showNotification(`Error: ${error}`, 3000);
+                } finally {
+                    showLoading(false);
+                }
+            }
+            
+            if (deleteBtn) {
+                const confirmed = await confirm('Are you sure you want to delete this entry?', { title: 'Delete Entry', kind: 'warning' });
+                if (confirmed) {
+                    showLoading(true);
+                    try {
+                        await invoke('remove_entry', {
+                            platform: deleteBtn.dataset.platform,
+                            userId: deleteBtn.dataset.userid,
+                        });
+                        await loadVaultEntries();
+                        showNotification('Entry deleted successfully!');
+                    } catch (error) {
+                        showNotification(`Error: ${error}`, 3000);
+                    } finally {
+                        showLoading(false);
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

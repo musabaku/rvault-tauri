@@ -1,0 +1,48 @@
+Rust / Cargo
+
+/target
+Cargo.lock
+
+Tauri
+
+/src-tauri/gen/
+/src-tauri/target/
+/src-tauri/Cargo.lock
+/build/
+/dist/
+
+Node.js (if you use a JS frontend framework)
+
+/node_modules/
+/.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+Environment variables
+
+.env
+.env.*
+!.env.example
+
+IDEs
+
+.vscode/
+.idea/
+*.suo
+.ntvs
+*.njsproj
+*.sln
+*.sw?
+
+Operating System Files
+
+.DS_Store
+Thumbs.db
+
+Log files
+
+*.log
+logs
+.log.

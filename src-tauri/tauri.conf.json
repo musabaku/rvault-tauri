@@ -1,0 +1,31 @@
+{
+  "identifier": "com.tauri.rvault",
+  "productName": "RVault",
+  "version": "0.1.0",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "fullscreen": false,
+        "height": 720,
+        "resizable": true,
+        "title": "RVault",
+        "width": 1080
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ]
+  }
+}
+
