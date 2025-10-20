@@ -6,28 +6,35 @@ use crate::{
 use argon2::{password_hash::SaltString, Argon2};
 use directories::ProjectDirs;
 use rusqlite::{params, Connection};
+use std::path::PathBuf;
+
+pub fn database_path() -> Result<PathBuf, DatabaseError> {
+    if let Some(project_dirs) = ProjectDirs::from("com", "tauri", "rvault") {
+        let project_dir = project_dirs.data_dir();
+        let database_dir = project_dir.join("databases");
+        std::fs::create_dir_all(&database_dir)?;
+        Ok(database_dir.join("default_vault.sqlite"))
+    } else {
+        Err(DatabaseError::Path)
+    }
+}
 
 pub struct Database {
     pub connection: Connection,
 }
 impl Database {
     pub fn new() -> Result<Self, DatabaseError> {
-        if let Some(project_dirs) = ProjectDirs::from("com", "tauri", "rvault") {
-            let project_dir = project_dirs.data_dir();
-            let database_dir = project_dir.join("databases");
-            std::fs::create_dir_all(&database_dir)?;
-            let final_path = database_dir.join("default_vault.sqlite");
-            let connection = Connection::open(&final_path)?;
-            Ok(Self { connection })
-        } else {
-            Err(DatabaseError::Path)
-        }
+        let final_path = database_path()?;
+        let connection = Connection::open(&final_path)?;
+        Ok(Self { connection })
     }
 }
 
 pub struct Table {
     table_name: String,
 }
+
+// In Rust, methods associated with a struct must be in an `impl` block.
 impl Table {
     pub fn new(db: &Database, table_name: Option<String>) -> Result<Self, DatabaseError> {
         let connection = &db.connection;

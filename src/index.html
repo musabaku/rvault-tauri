@@ -44,7 +44,7 @@
     <div id="app-container" class="w-full max-w-4xl p-4">
 
         <!-- Setup/Login Screen -->
-        <div id="auth-screen">
+        <div id="auth-screen" class="hidden">
             <div class="max-w-md p-8 mx-auto space-y-6 bg-gray-800 rounded-lg shadow-xl">
                 <div class="text-center">
                     <svg class="w-12 h-12 mx-auto text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
@@ -74,6 +74,9 @@
                         <input type="password" id="master-password" class="w-full px-3 py-2 text-white bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
                     </div>
                     <button id="unlock-button" class="w-full px-4 py-2 font-bold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">Unlock</button>
+                    <div class="text-center">
+                        <button type="button" id="reset-button" class="mt-4 text-xs text-gray-400 transition-colors hover:text-red-400">Forgot Password? Reset Vault</button>
+                    </div>
                 </div>
                  <p id="auth-error" class="text-sm text-center text-red-400"></p>
             </div>
@@ -132,12 +135,15 @@
     </div>
 
     <!-- Tauri API script -->
-    <script type="module">
-        const { invoke } = await import ("@tauri-apps/api/core");
-        const { confirm } = await import ("@tauri-apps/api/dialog");
-        const { writeText } = await import("@tauri-apps/api/clipboard");
+    <script>
+      // This script no longer uses `type="module"`
+      document.addEventListener('DOMContentLoaded', () => {
+        // --- Destructure APIs from the global `window.__TAURI__` object ---
+        const { invoke } = window.__TAURI__.core;
+        const { confirm } = window.__TAURI__.dialog;
+        const { writeText } = window.__TAURI__.clipboardManager;
 
-        // UI Elements
+        // --- UI Elements ---
         const loadingOverlay = document.getElementById('loading-overlay');
         const authScreen = document.getElementById('auth-screen');
         const vaultScreen = document.getElementById('vault-screen');
@@ -154,8 +160,17 @@
         const userIdInput = document.getElementById('user-id');
         const passwordInput = document.getElementById('password');
         const notification = document.getElementById('notification');
+        const resetButton = document.getElementById('reset-button');
+
 
         // --- State Management ---
+        function showView(viewId) {
+            authScreen.classList.add('hidden');
+            vaultScreen.classList.add('hidden');
+            if (viewId === 'auth') authScreen.classList.remove('hidden');
+            else if (viewId === 'vault') vaultScreen.classList.remove('hidden');
+        }
+
         function showLoading(show) {
             loadingOverlay.classList.toggle('hidden', !show);
             loadingOverlay.classList.toggle('flex', show);
@@ -175,17 +190,17 @@
             try {
                 const needsSetup = await invoke('check_setup');
                 if (needsSetup) {
-                    authScreen.classList.remove('hidden');
                     setupView.classList.remove('hidden');
                     loginView.classList.add('hidden');
                 } else {
-                    authScreen.classList.remove('hidden');
                     loginView.classList.remove('hidden');
                     setupView.classList.add('hidden');
                 }
+                showView('auth');
             } catch (error) {
-                authError.textContent = `Error: ${error}`;
+                authError.textContent = `Critical Error: ${error}`;
                 console.error("Error during initial state check:", error);
+                showView('auth');
             } finally {
                 showLoading(false);
             }
@@ -195,7 +210,7 @@
             showLoading(true);
             try {
                 const entries = await invoke('get_all_entries');
-                vaultList.innerHTML = ''; // Clear list
+                vaultList.innerHTML = '';
                 if (entries.length === 0) {
                     emptyVaultMessage.classList.remove('hidden');
                 } else {
@@ -220,42 +235,34 @@
                         vaultList.appendChild(div);
                     });
                 }
-                authScreen.classList.add('hidden');
-                vaultScreen.classList.remove('hidden');
+                showView('vault');
             } catch (error) {
-                // If getting entries fails, it means we are locked.
-                authScreen.classList.remove('hidden');
-                vaultScreen.classList.add('hidden');
                 loginView.classList.remove('hidden');
                 setupView.classList.add('hidden');
                 authError.textContent = `Session expired or invalid. Please unlock.`;
+                showView('auth');
             } finally {
                 showLoading(false);
             }
         }
-
-        // --- Event Listeners ---
-        document.addEventListener('DOMContentLoaded', checkInitialState);
-
-        // Auth Screen events
+        
+        // --- Event Listeners (now inside DOMContentLoaded) ---
         document.getElementById('setup-button').addEventListener('click', async () => {
             const password = document.getElementById('setup-password').value;
-            const confirm = document.getElementById('confirm-password').value;
+            const confirmPass = document.getElementById('confirm-password').value;
             authError.textContent = '';
-            
-            if (password !== confirm) {
+            if (password !== confirmPass) {
                 authError.textContent = 'Passwords do not match.';
                 return;
             }
-            if(password.length < 8) {
+            if (password.length < 8) {
                 authError.textContent = 'Password must be at least 8 characters long.';
                 return;
             }
-
             showLoading(true);
             try {
                 await invoke('setup_vault', { masterPassword: password });
-                await loadVaultEntries(); // After setup, unlock and load
+                await loadVaultEntries();
             } catch (error) {
                 authError.textContent = `Setup failed: ${error}`;
             } finally {
@@ -277,17 +284,36 @@
                 showLoading(false);
             }
         });
+        
+        resetButton.addEventListener('click', async () => {
+            const confirmed = await confirm(
+                'Are you absolutely sure? This will permanently delete your encrypted vault and all saved passwords. This action cannot be undone.', 
+                { title: 'Confirm Vault Deletion', type: 'warning' }
+            );
 
-        // Main Vault Screen Events
+            if (confirmed) {
+                showLoading(true);
+                try {
+                    await invoke('reset_vault');
+                    showNotification('Vault has been reset. The app will now restart.', 3000);
+                    // Reload the app to go back to the setup screen
+                    setTimeout(() => window.location.reload(), 2000);
+                } catch (error) {
+                    authError.textContent = `Failed to reset vault: ${error}`;
+                } finally {
+                    showLoading(false);
+                }
+            }
+        });
+
         document.getElementById('lock-btn').addEventListener('click', async () => {
             showLoading(true);
             try {
                 await invoke('lock_vault');
-                authScreen.classList.remove('hidden');
-                vaultScreen.classList.add('hidden');
                 loginView.classList.remove('hidden');
                 setupView.classList.add('hidden');
                 authError.textContent = 'Vault has been locked.';
+                showView('auth');
             } catch(error) {
                 console.error("Failed to lock vault:", error);
             } finally {
@@ -297,11 +323,11 @@
 
         document.getElementById('add-entry-btn').addEventListener('click', () => {
             entryForm.reset();
+            passwordInput.type = 'password';
             entryModal.classList.remove('hidden');
             entryModal.classList.add('flex');
         });
 
-        // Modal Events
         document.getElementById('cancel-btn').addEventListener('click', () => {
             entryModal.classList.add('hidden');
             entryModal.classList.remove('flex');
@@ -312,19 +338,17 @@
             try {
                 const newPassword = await invoke('generate_password', { length: 16, specialCharacters: true });
                 passwordInput.value = newPassword;
-                passwordInput.type = 'text'; // Show the generated password
+                passwordInput.type = 'text';
             } catch (error) {
                 console.error('Failed to generate password:', error);
             }
         });
-
 
         entryForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             showLoading(true);
             entryModal.classList.add('hidden');
             entryModal.classList.remove('flex');
-
             try {
                 await invoke('add_entry', {
                     platform: platformInput.value,
@@ -332,7 +356,7 @@
                     password: passwordInput.value,
                 });
                 await loadVaultEntries();
-                 showNotification('Entry added successfully!');
+                showNotification('Entry added successfully!');
             } catch (error) {
                 console.error('Failed to add entry:', error);
             } finally {
@@ -340,7 +364,6 @@
             }
         });
 
-        // Event delegation for dynamically added buttons
         vaultList.addEventListener('click', async (e) => {
             const copyBtn = e.target.closest('.copy-btn');
             const deleteBtn = e.target.closest('.delete-btn');
@@ -355,14 +378,14 @@
                     await writeText(passwordToCopy);
                     showNotification('Password copied to clipboard!');
                 } catch (error) {
-                     showNotification(`Error: ${error}`, 3000);
+                    showNotification(`Error: ${error}`, 3000);
                 } finally {
                     showLoading(false);
                 }
             }
             
             if (deleteBtn) {
-                const confirmed = await confirm('Are you sure you want to delete this entry?', { title: 'Delete Entry', kind: 'warning' });
+                const confirmed = await confirm('Are you sure you want to delete this entry?', { title: 'Delete Entry', type: 'warning' });
                 if (confirmed) {
                     showLoading(true);
                     try {
@@ -380,6 +403,11 @@
                 }
             }
         });
+        
+        // --- Start the app ---
+        checkInitialState();
+      });
     </script>
 </body>
 </html>
+

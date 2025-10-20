@@ -7,6 +7,10 @@ mod keystore;
 mod models;
 mod storage;
 
+// Explicitly import the plugins
+use tauri_plugin_clipboard_manager;
+use tauri_plugin_dialog;
+
 use crate::models::{AppState, VaultEntry};
 use std::sync::Mutex;
 use tauri::State;
@@ -41,19 +45,49 @@ fn setup_vault(master_password: &str, app_state: State<'_, AppState>) -> Result<
 #[tauri::command]
 fn unlock_vault(master_password: &str, app_state: State<'_, AppState>) -> Result<(), String> {
     let path = keystore::keystore_path()?;
-    let key = keystore::load_key_from_vault(master_password, &path)?;
-
-    // Store the unlocked key in the shared state
-    let mut key_guard = app_state.encryption_key.lock().unwrap();
-    *key_guard = Some(key);
-
-    Ok(())
+    
+    // Handle the decryption error to give a better message
+    match keystore::load_key_from_vault(master_password, &path) {
+        Ok(key) => {
+            let mut key_guard = app_state.encryption_key.lock().unwrap();
+            *key_guard = Some(key);
+            Ok(())
+        }
+        Err(e) => {
+            // Check for the specific cryptographic error
+            if e.contains("aead::Error") {
+                Err("Incorrect master password.".to_string())
+            } else {
+                Err(e) // Pass through any other errors
+            }
+        }
+    }
 }
 
 #[tauri::command]
 fn lock_vault(app_state: State<'_, AppState>) -> Result<(), String> {
     let mut key_guard = app_state.encryption_key.lock().unwrap();
     *key_guard = None; // Clear the key from memory
+    Ok(())
+}
+
+#[tauri::command]
+fn reset_vault(app_state: State<'_, AppState>) -> Result<(), String> { // <-- 1. Add app_state here
+    let keystore_path = keystore::keystore_path()?;
+    let db_path = storage::database_path().map_err(|e| e.to_string())?;
+
+    if keystore_path.exists() {
+        std::fs::remove_file(keystore_path).map_err(|e| format!("Failed to delete keystore: {}", e))?;
+    }
+
+    if db_path.exists() {
+        std::fs::remove_file(db_path).map_err(|e| format!("Failed to delete database: {}", e))?;
+    }
+
+
+    let mut key_guard = app_state.encryption_key.lock().unwrap();
+    *key_guard = None; 
+
     Ok(())
 }
 
@@ -156,11 +190,14 @@ fn main() {
         .manage(AppState {
             encryption_key: Mutex::new(None),
         })
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             check_setup,
             setup_vault,
             unlock_vault,
             lock_vault,
+            reset_vault,
             get_all_entries,
             add_entry,
             remove_entry,
@@ -170,3 +207,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
