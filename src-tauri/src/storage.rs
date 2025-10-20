@@ -8,11 +8,12 @@ use directories::ProjectDirs;
 use rusqlite::{params, Connection};
 use std::path::PathBuf;
 
+// ADDED: New function to get the database path without opening a connection.
+// This is used by the reset_vault command to locate and delete the file.
 pub fn database_path() -> Result<PathBuf, DatabaseError> {
     if let Some(project_dirs) = ProjectDirs::from("com", "tauri", "rvault") {
         let project_dir = project_dirs.data_dir();
         let database_dir = project_dir.join("databases");
-        std::fs::create_dir_all(&database_dir)?;
         Ok(database_dir.join("default_vault.sqlite"))
     } else {
         Err(DatabaseError::Path)
@@ -25,6 +26,9 @@ pub struct Database {
 impl Database {
     pub fn new() -> Result<Self, DatabaseError> {
         let final_path = database_path()?;
+        if let Some(parent) = final_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let connection = Connection::open(&final_path)?;
         Ok(Self { connection })
     }
@@ -33,8 +37,6 @@ impl Database {
 pub struct Table {
     table_name: String,
 }
-
-// In Rust, methods associated with a struct must be in an `impl` block.
 impl Table {
     pub fn new(db: &Database, table_name: Option<String>) -> Result<Self, DatabaseError> {
         let connection = &db.connection;
@@ -141,8 +143,12 @@ impl Table {
             .unwrap();
 
         // 2. Decrypt with the derived key.
-        decrypt_with_key(&entry_key, &ciphertext, &nonce)
-            .map_err(|e| DatabaseError::Custom(e))
+        // FIXED: Now correctly handles the Vec<u8> result and converts the final password to a String.
+        let decrypted_bytes = decrypt_with_key(&entry_key, &ciphertext, &nonce)
+            .map_err(|e| DatabaseError::Custom(e))?;
+
+        String::from_utf8(decrypted_bytes)
+            .map_err(|e| DatabaseError::Custom(format!("Failed to decode password as UTF-8: {}", e)))
     }
     
     pub fn list(&self, db: &Database) -> Result<Vec<VaultEntry>, DatabaseError> {
@@ -168,4 +174,3 @@ impl Table {
         Ok(out)
     }
 }
-

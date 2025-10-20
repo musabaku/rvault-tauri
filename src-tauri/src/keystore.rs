@@ -74,11 +74,11 @@ pub fn load_key_from_vault(master_password: &str, path: &Path) -> Result<[u8; EK
     let kek = crypto::derive_kek(master_password.as_bytes(), salt)?;
 
     // 3. Decrypt the MEK using the KEK.
-    let mek_str = decrypt_with_key(&kek, &encrypted_mek_b64, &nonce_b64)?;
+    // FIXED: Now correctly handles the Vec<u8> result from decrypt_with_key
+    let mek_vec = decrypt_with_key(&kek, &encrypted_mek_b64, &nonce_b64)?;
     
-    // The decrypted key should be raw bytes, not a utf8 string.
-    let mek_bytes = mek_str.as_bytes().try_into().map_err(|_| "Decrypted key has incorrect length.".to_string())?;
+    // The decrypted key should be raw bytes, attempt to convert Vec<u8> to [u8; 32]
+    let mek_bytes = mek_vec.try_into().map_err(|_| "Decrypted key has incorrect length.".to_string())?;
 
     Ok(mek_bytes)
 }
-

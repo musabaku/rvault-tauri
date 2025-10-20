@@ -35,11 +35,13 @@ pub fn encrypt_with_key(key: &[u8], data: &[u8]) -> Result<(String, String), Str
     Ok((Base64.encode(&ciphertext), Base64.encode(&nonce)))
 }
 
+// FIXED: This function now correctly returns raw bytes (Vec<u8>) instead of trying
+// to interpret them as a UTF-8 string, which could fail.
 pub fn decrypt_with_key(
     key: &[u8],
     ciphertext_b64: &str,
     nonce_b64: &str,
-) -> Result<String, String> {
+) -> Result<Vec<u8>, String> {
     let ciphertext = Base64.decode(ciphertext_b64).map_err(|e| e.to_string())?;
     let nonce_bytes = Base64.decode(nonce_b64).map_err(|e| e.to_string())?;
     
@@ -50,7 +52,7 @@ pub fn decrypt_with_key(
     let plaintext = cipher
         .decrypt(nonce, ciphertext.as_ref())
         .map_err(|e| e.to_string())?;
-    String::from_utf8(plaintext).map_err(|e| e.to_string())
+    Ok(plaintext)
 }
 
 pub fn derive_kek(
@@ -70,4 +72,3 @@ pub fn derive_kek(
     out.zeroize();
     Ok(key)
 }
-
