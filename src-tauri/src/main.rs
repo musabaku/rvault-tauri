@@ -7,6 +7,10 @@ mod keystore;
 mod models;
 mod storage;
 
+// Explicitly import the plugins to be used
+use tauri_plugin_clipboard_manager;
+use tauri_plugin_dialog;
+
 use crate::models::{AppState, VaultEntry};
 use std::sync::Mutex;
 use tauri::State;
@@ -27,11 +31,9 @@ fn setup_vault(master_password: &str, app_state: State<'_, AppState>) -> Result<
     }
     let encryption_key = keystore::create_key_vault(master_password, &path)?;
 
-    // Store the key in memory after setup
     let mut key_guard = app_state.encryption_key.lock().unwrap();
     *key_guard = Some(encryption_key);
 
-    // Also, create the initial database
     let db = storage::Database::new().map_err(|e| e.to_string())?;
     let _table = storage::Table::new(&db, None).map_err(|e| e.to_string())?;
 
@@ -41,49 +43,46 @@ fn setup_vault(master_password: &str, app_state: State<'_, AppState>) -> Result<
 #[tauri::command]
 fn unlock_vault(master_password: &str, app_state: State<'_, AppState>) -> Result<(), String> {
     let path = keystore::keystore_path()?;
-    let key = keystore::load_key_from_vault(master_password, &path)?;
-
-    // Store the unlocked key in the shared state
-    let mut key_guard = app_state.encryption_key.lock().unwrap();
-    *key_guard = Some(key);
-
-    Ok(())
+    
+    match keystore::load_key_from_vault(master_password, &path) {
+        Ok(key) => {
+            let mut key_guard = app_state.encryption_key.lock().unwrap();
+            *key_guard = Some(key);
+            Ok(())
+        }
+        Err(e) => {
+            if e.contains("aead::Error") || e.contains("Invalid utf-8 sequence") {
+                Err("Incorrect master password.".to_string())
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 #[tauri::command]
 fn lock_vault(app_state: State<'_, AppState>) -> Result<(), String> {
     let mut key_guard = app_state.encryption_key.lock().unwrap();
-    *key_guard = None; // Clear the key from memory
+    *key_guard = None;
     Ok(())
 }
 
-// ADDED: New command to completely reset the vault
 #[tauri::command]
-fn reset_vault(app_state: State<'_, AppState>) -> Result<(), String> {
-    // 1. Clear the in-memory key first
-    let mut key_guard = app_state.encryption_key.lock().unwrap();
-    *key_guard = None;
-
-    // 2. Delete the keystore file
+fn reset_vault() -> Result<(), String> {
     let keystore_path = keystore::keystore_path()?;
-    if keystore_path.exists() {
-        std::fs::remove_file(keystore_path)
-            .map_err(|e| format!("Failed to delete keystore: {}", e))?;
-    }
-
-    // 3. Delete the database file
     let db_path = storage::database_path().map_err(|e| e.to_string())?;
-    if db_path.exists() {
-        std::fs::remove_file(db_path)
-            .map_err(|e| format!("Failed to delete database: {}", e))?;
-    }
 
+    if keystore_path.exists() {
+        std::fs::remove_file(keystore_path).map_err(|e| format!("Failed to delete keystore: {}", e))?;
+    }
+    if db_path.exists() {
+        std::fs::remove_file(db_path).map_err(|e| format!("Failed to delete database: {}", e))?;
+    }
     Ok(())
 }
 
 #[tauri::command]
 fn get_all_entries(app_state: State<'_, AppState>) -> Result<Vec<VaultEntry>, String> {
-    // Ensure the vault is unlocked by checking for the key
     let key_guard = app_state.encryption_key.lock().unwrap();
     if key_guard.is_none() {
         return Err("Vault is locked.".to_string());
@@ -93,13 +92,11 @@ fn get_all_entries(app_state: State<'_, AppState>) -> Result<Vec<VaultEntry>, St
     let table = storage::Table::new(&db, None).map_err(|e| e.to_string())?;
     let entries = table.list(&db).map_err(|e| e.to_string())?;
 
-    // We only return platform and user_id for the list view
     let safe_entries = entries
         .into_iter()
         .map(|e| VaultEntry {
             platform: e.platform,
             user_id: e.user_id,
-            // Do not expose password, salt, or nonce to the UI list
             password: "".to_string(),
             salt: None,
             nonce: None,
@@ -134,7 +131,6 @@ fn remove_entry(
     user_id: String,
     app_state: State<'_, AppState>,
 ) -> Result<(), String> {
-    // Check lock state
     let key_guard = app_state.encryption_key.lock().unwrap();
     if key_guard.is_none() {
         return Err("Vault is locked.".to_string());
@@ -163,7 +159,6 @@ fn get_password(
         .get_password_with_key(&db, encryption_key, platform, user_id)
         .map_err(|e| e.to_string())?;
     
-    // The password is now returned to the frontend
     Ok(password)
 }
 
@@ -173,19 +168,20 @@ fn generate_password(length: u8, special_characters: bool) -> Result<String, Str
 }
 
 fn main() {
-    // Initialize logging
     env_logger::init();
 
     tauri::Builder::default()
         .manage(AppState {
             encryption_key: Mutex::new(None),
         })
+        .plugin(tauri_plugin_clipboard_manager::init()) // Ensure clipboard is initialized
+        .plugin(tauri_plugin_dialog::init())             // Ensure dialog is initialized
         .invoke_handler(tauri::generate_handler![
             check_setup,
             setup_vault,
             unlock_vault,
             lock_vault,
-            reset_vault, // ADDED: Register the new command
+            reset_vault,
             get_all_entries,
             add_entry,
             remove_entry,
@@ -195,3 +191,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
