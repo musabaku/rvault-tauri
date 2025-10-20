@@ -87,6 +87,7 @@ fn reset_vault(app_state: State<'_, AppState>) -> Result<(), String> { // <-- 1.
 
     let mut key_guard = app_state.encryption_key.lock().unwrap();
     *key_guard = None; 
+    // --- END FIX ---
 
     Ok(())
 }
